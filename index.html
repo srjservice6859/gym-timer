@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0B0D0F">
+<meta name="description" content="A dark, distraction-free interval timer for circuit and HIIT workouts.">
+<title>Interval — Gym Timer</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  /* ---------------------------------------------------------------
+     DESIGN TOKENS
+     A dark "arena" theme: near-black surfaces, a single hard-working
+     accent that changes meaning with the workout state (amber = get
+     ready, orange = work, cyan = rest, green = complete).
+  ----------------------------------------------------------------*/
+  :root{
+    --bg: #0B0D0F;
+    --surface: #14171A;
+    --surface-2: #1B1F23;
+    --border: #262B30;
+    --text: #F3F2ED;
+    --muted: #838D95;
+    --muted-2: #565E64;
+
+    --workout: #FF4B2B;
+    --rest: #2FD1E0;
+    --ready: #F5C542;
+    --complete: #6EE787;
+    --idle: #6B7580;
+
+    --accent: var(--idle);
+    --radius-lg: 20px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.4s ease;
+  }
+  body[data-mode="ready"]{ --accent: var(--ready); }
+  body[data-mode="workout"]{ --accent: var(--workout); }
+  body[data-mode="rest"]{ --accent: var(--rest); }
+  body[data-mode="complete"]{ --accent: var(--complete); }
+  body[data-mode="idle"]{ --accent: var(--idle); }
+
+  button{ font-family: inherit; }
+  input{ font-family: inherit; }
+
+  :focus-visible{
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .app{
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0 0 32px;
+  }
+
+  /* ---------------- Top bar ---------------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    padding: 18px 20px 8px;
+  }
+  .brand{
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.32em;
+    color: var(--text);
+  }
+  .overall-progress{
+    flex:1;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .overall-progress-track{
+    flex:1;
+    height:4px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    overflow:hidden;
+  }
+  .overall-progress-fill{
+    height:100%;
+    width:0%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.35s ease, background 0.4s ease;
+  }
+  #overallPercent{
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+    text-align:right;
+  }
+  .icon-btn{
+    width: 36px; height:36px;
+    border-radius: 50%;
+    border:1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 16px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .icon-btn:active{ transform: scale(0.94); }
+
+  /* ---------------- Stage (timer) ---------------- */
+  .stage{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 10px 20px 20px;
+  }
+  .mode-badge{
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.24em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    padding: 6px 16px;
+    border-radius: 999px;
+    transition: color 0.4s ease, background 0.4s ease, border-color 0.4s ease;
+    margin-bottom: 22px;
+  }
+
+  .ring-wrap{
+    position: relative;
+    width: min(78vw, 300px);
+    height: min(78vw, 300px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .ring{
+    width:100%;
+    height:100%;
+    transform: rotate(-90deg);
+  }
+  .ring-track{
+    fill:none;
+    stroke: var(--surface-2);
+    stroke-width: 10;
+  }
+  .ring-progress{
+    fill:none;
+    stroke: var(--accent);
+    stroke-width: 10;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.18s linear, stroke 0.4s ease;
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 55%, transparent));
+  }
+  .ring-center{
+    position:absolute;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding: 0 20px;
+  }
+  .time{
+    font-size: 58px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height:1;
+  }
+  .exercise-name{
+    margin-top: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+    max-width: 220px;
+  }
+
+  .round-info{
+    margin-top: 20px;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .controls{
+    display:flex;
+    gap: 12px;
+    margin-top: 26px;
+    width:100%;
+  }
+  .btn{
+    flex:1;
+    padding: 14px 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor:pointer;
+  }
+  .btn:active{ transform: scale(0.97); }
+  .btn:disabled{ opacity: 0.4; cursor:not-allowed; }
+  .btn-primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0B0D0F;
+  }
+  .btn-ghost{
+    background: transparent;
+  }
+  .btn.small{ flex:none; padding: 10px 16px; font-size:13px; }
+
+  /* ---------------- Panels ---------------- */
+  .panel{
+    margin: 14px 20px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 18px 20px;
+  }
+  .panel h2{
+    margin: 0 0 14px;
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .field-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-row:last-child{ border-bottom:none; padding-bottom:0; }
+  .field-row label{ font-size: 14px; font-weight: 600; }
+
+  .preset-group{ display:flex; gap:8px; }
+  .preset{
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    cursor:pointer;
+  }
+  .preset.active{
+    background: var(--workout);
+    border-color: var(--workout);
+    color: #0B0D0F;
+  }
+  .preset:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  input[type="number"], input[type="text"]{
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    font-size: 14px;
+    width: 84px;
+    text-align:center;
+  }
+  input[type="text"]{ width:auto; flex:1; text-align:left; }
+  input:disabled{ opacity:0.45; }
+
+  /* ---------------- Exercise list ---------------- */
+  .exercise-list{
+    list-style:none;
+    margin:0 0 14px;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .exercise-item{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    padding: 11px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .exercise-item.current{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .exercise-check{
+    width: 22px; height:22px;
+    border-radius: 50%;
+    border: 2px solid var(--muted-2);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 13px;
+    color: transparent;
+    flex-shrink:0;
+    transition: all 0.2s ease;
+  }
+  .exercise-item.done .exercise-check{
+    background: var(--complete);
+    border-color: var(--complete);
+    color: #0B0D0F;
+  }
+  .exercise-item.done .exercise-name-text{
+    color: var(--muted);
+    text-decoration: line-through;
+  }
+  .exercise-name-text{
+    flex:1;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+  .remove-exercise{
+    background:none;
+    border:none;
+    color: var(--muted);
+    font-size: 18px;
+    cursor:pointer;
+    line-height:1;
+    padding: 2px 4px;
+  }
+  .remove-exercise:disabled{ opacity:0.3; cursor:not-allowed; }
+
+  .add-exercise-row{
+    display:flex;
+    gap: 8px;
+  }
+
+  /* ---------------- Toast ---------------- */
+  .toast{
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events:none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 50;
+  }
+  .toast.show{
+    opacity:1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  @media (max-width: 360px){
+    .time{ font-size: 46px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+</style>
+</head>
+<body data-mode="idle">
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">INTERVAL</div>
+    <div class="overall-progress" aria-label="Overall workout completion">
+      <div class="overall-progress-track">
+        <div class="overall-progress-fill" id="overallFill"></div>
+      </div>
+      <span id="overallPercent">0%</span>
+    </div>
+    <button id="fullscreenBtn" class="icon-btn" aria-label="Toggle full screen">⛶</button>
+  </header>
+
+  <main class="stage">
+    <div class="mode-badge" id="modeBadge">READY</div>
+
+    <div class="ring-wrap">
+      <svg viewBox="0 0 240 240" class="ring">
+        <circle class="ring-track" cx="120" cy="120" r="108"></circle>
+        <circle class="ring-progress" id="ringProgress" cx="120" cy="120" r="108"></circle>
+      </svg>
+      <div class="ring-center">
+        <div class="time" id="timeDisplay">00:30</div>
+        <div class="exercise-name" id="exerciseName">Press Start</div>
+      </div>
+    </div>
+
+    <div class="round-info" id="roundInfo">Round 1 of 3</div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn btn-primary">Start</button>
+      <button id="pauseBtn" class="btn" disabled>Pause</button>
+      <button id="resetBtn" class="btn btn-ghost">Reset</button>
+    </div>
+  </main>
+
+  <section class="panel">
+    <h2>Settings</h2>
+    <div class="field-row">
+      <label>Workout time</label>
+      <div class="preset-group" id="presetGroup">
+        <button class="preset" data-secs="30">30s</button>
+        <button class="preset" data-secs="45">45s</button>
+        <button class="preset" data-secs="60">60s</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <label for="restInput">Rest time (sec)</label>
+      <input type="number" id="restInput" min="1" max="600" value="15">
+    </div>
+    <div class="field-row">
+      <label for="roundsInput">Rounds</label>
+      <input type="number" id="roundsInput" min="1" max="50" value="3">
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Exercises</h2>
+    <ul class="exercise-list" id="exerciseList"></ul>
+    <div class="add-exercise-row">
+      <input type="text" id="newExerciseInput" placeholder="Add exercise…" maxlength="40">
+      <button id="addExerciseBtn" class="btn btn-ghost small">Add</button>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =================================================================
+     STATE
+     All durations are stored in whole seconds; timing math is done
+     in milliseconds against Date.now() so the countdown can never
+     drift, even if the tab is backgrounded and throttled.
+  ==================================================================*/
+  const STORAGE_KEY = "gymIntervalTimerSettings";
+
+  const DEFAULT_EXERCISES = [
+    { name: "Push Ups" },
+    { name: "Squats" },
+    { name: "Plank" },
+    { name: "Burpees" },
+    { name: "Mountain Climbers" }
+  ];
+
+  let exercises = [];
+  let workoutDuration = 30;   // seconds
+  let restDuration = 15;      // seconds
+  let totalRounds = 3;
+
+  let currentMode = "idle";   // idle | ready | workout | rest | complete
+  let currentRound = 1;
+  let currentExerciseIndex = 0;
+  let completedThisRound = new Set();
+  let overallCompletedCount = 0;
+
+  let isPaused = false;
+  let phaseStartTimestamp = 0;
+  let phaseDurationMs = 0;
+  let phaseRemainingMsAtPause = 0;
+  let tickIntervalId = null;
+  let countdownVoiceFired = {};
+
+  /* =================================================================
+     DOM REFERENCES
+  ==================================================================*/
+  const bodyEl = document.body;
+  const modeBadge = document.getElementById("modeBadge");
+  const timeDisplay = document.getElementById("timeDisplay");
+  const exerciseNameEl = document.getElementById("exerciseName");
+  const roundInfoEl = document.getElementById("roundInfo");
+  const ringProgress = document.getElementById("ringProgress");
+  const overallFill = document.getElementById("overallFill");
+  const overallPercentEl = document.getElementById("overallPercent");
+
+  const startBtn = document.getElementById("startBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
+
+  const presetGroup = document.getElementById("presetGroup");
+  const restInput = document.getElementById("restInput");
+  const roundsInput = document.getElementById("roundsInput");
+
+  const exerciseListEl = document.getElementById("exerciseList");
+  const newExerciseInput = document.getElementById("newExerciseInput");
+  const addExerciseBtn = document.getElementById("addExerciseBtn");
+
+  const toastEl = document.getElementById("toast");
+
+  // Exact ring circumference, read from the SVG itself so the radius
+  // in the markup and the JS math can never fall out of sync.
+  const RING_CIRCUMFERENCE = ringProgress.getTotalLength();
+  ringProgress.style.strokeDasharray = String(RING_CIRCUMFERENCE);
+  ringProgress.style.strokeDashoffset = "0";
+
+  /* =================================================================
+     PERSISTENCE
+  ==================================================================*/
+  function loadSettings(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const saved = JSON.parse(raw);
+        if(Array.isArray(saved.exercises) && saved.exercises.length){
+          exercises = saved.exercises;
+        }
+        if(typeof saved.workoutDuration === "number") workoutDuration = saved.workoutDuration;
+        if(typeof saved.restDuration === "number") restDuration = saved.restDuration;
+        if(typeof saved.totalRounds === "number") totalRounds = saved.totalRounds;
+      }
+    }catch(err){
+      console.warn("Could not read saved settings, using defaults.", err);
+    }
+    if(!exercises.length){
+      exercises = DEFAULT_EXERCISES.map(e => ({ name: e.name }));
+    }
+  }
+
+  function saveSettings(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        exercises, workoutDuration, restDuration, totalRounds
+      }));
+    }catch(err){
+      console.warn("Could not save settings.", err);
+    }
+  }
+
+  /* =================================================================
+     AUDIO — short synthesized tones via Web Audio API, plus the
+     browser's built-in speech synthesis for the voice countdown.
+     No external audio files are used, so everything works offline.
+  ==================================================================*/
+  let audioCtx = null;
+
+  function initAudio(){
+    if(!audioCtx){
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if(Ctx) audioCtx = new Ctx();
+    }
+    if(audioCtx && audioCtx.state === "suspended"){
+      audioCtx.resume();
+    }
+  }
+
+  function beep(freq, duration, type, volume){
+    if(!audioCtx) return;
+    type = type || "sine";
+    volume = volume === undefined ? 0.25 : volume;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration + 0.03);
+  }
+
+  function playChime(kind){
+    if(!audioCtx) return;
+    if(kind === "workoutComplete"){
+      beep(660, 0.15, "sine", 0.28);
+      setTimeout(() => beep(880, 0.15, "sine", 0.28), 150);
+    }else if(kind === "restComplete"){
+      beep(523, 0.12, "sine", 0.28);
+      setTimeout(() => beep(659, 0.12, "sine", 0.28), 120);
+      setTimeout(() => beep(784, 0.18, "sine", 0.28), 240);
+    }else if(kind === "allComplete"){
+      [523, 659, 784, 1046].forEach((f, i) => {
+        setTimeout(() => beep(f, 0.22, "sine", 0.3), i * 170);
+      });
+    }
+  }
+
+  function speak(text){
+    if(!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.05;
+    utter.pitch = 1;
+    utter.volume = 1;
+    window.speechSynthesis.speak(utter);
+  }
+
+  function vibrate(pattern){
+    if("vibrate" in navigator){
+      navigator.vibrate(pattern);
+    }
+  }
+
+  /* =================================================================
+     TOAST — small transient feedback message
+  ==================================================================*/
+  let toastTimer = null;
+  function showToast(message){
+    toastEl.textContent = message;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800);
+  }
+
+  /* =================================================================
+     TIMER ENGINE
+  ==================================================================*/
+  function startPhase(mode, durationSeconds){
+    currentMode = mode;
+    phaseDurationMs = durationSeconds * 1000;
+    phaseStartTimestamp = Date.now();
+    isPaused = false;
+    countdownVoiceFired = {};
+
+    updateModeUI();
+    renderExerciseList();
+
+    if(!tickIntervalId){
+      tickIntervalId = setInterval(tick, 100);
+    }
+  }
+
+  function tick(){
+    if(isPaused || currentMode === "idle" || currentMode === "complete") return;
+
+    const elapsed = Date.now() - phaseStartTimestamp;
+    let remainingMs = phaseDurationMs - elapsed;
+
+    if(remainingMs <= 0){
+      updateDisplay(0, phaseDurationMs);
+      onPhaseComplete();
+      return;
+    }
+
+    updateDisplay(remainingMs, phaseDurationMs);
+    handleCountdownCues(remainingMs);
+  }
+
+  function handleCountdownCues(remainingMs){
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    if(remainingSec <= 3 && remainingSec >= 1 && !countdownVoiceFired[remainingSec]){
+      countdownVoiceFired[remainingSec] = true;
+      beep(880, 0.09, "square", 0.18);
+      // Voice countdown hypes up the transition into the next workout
+      // interval — heard at the tail of "Ready" and "Rest" phases.
+      if(currentMode === "ready" || currentMode === "rest"){
+        speak(String(remainingSec));
+      }
+    }
+  }
+
+  function onPhaseComplete(){
+    if(currentMode === "ready"){
+      startPhase("workout", workoutDuration);
+      speak("Go!");
+      return;
+    }
+
+    if(currentMode === "workout"){
+      markExerciseComplete(currentExerciseIndex);
+      playChime("workoutComplete");
+      vibrate([200]);
+
+      const isLastExercise = currentExerciseIndex === exercises.length - 1;
+      const isLastRound = currentRound === totalRounds;
+      if(isLastExercise && isLastRound){
+        finishWorkout();
+        return;
+      }
+      startPhase("rest", restDuration);
+      return;
+    }
+
+    if(currentMode === "rest"){
+      playChime("restComplete");
+      vibrate([100, 50, 100]);
+
+      currentExerciseIndex++;
+      if(currentExerciseIndex >= exercises.length){
+        currentExerciseIndex = 0;
+        currentRound++;
+        completedThisRound = new Set();
+      }
+      startPhase("workout", workoutDuration);
+      speak("Go!");
+      return;
+    }
+  }
+
+  function finishWorkout(){
+    clearInterval(tickIntervalId);
+    tickIntervalId = null;
+    currentMode = "complete";
+    playChime("allComplete");
+    vibrate([200, 100, 200, 100, 400]);
+
+    updateModeUI();
+    renderExerciseList();
+    updateDisplay(0, 1);
+
+    startBtn.disabled = false;
+    startBtn.textContent = "Start Again";
+    pauseBtn.disabled = true;
+    pauseBtn.textContent = "Pause";
+    lockSettingsInputs(false);
+  }
+
+  function markExerciseComplete(idx){
+    completedThisRound.add(idx);
+    overallCompletedCount++;
+    updateOverallProgress();
+  }
+
+  function pauseTimer(){
+    if(currentMode === "idle" || currentMode === "complete") return;
+    isPaused = true;
+    phaseRemainingMsAtPause = phaseDurationMs - (Date.now() - phaseStartTimestamp);
+    pauseBtn.textContent = "Resume";
+  }
+
+  function resumeTimer(){
+    if(currentMode === "idle" || currentMode === "complete") return;
+    isPaused = false;
+    phaseStartTimestamp = Date.now() - (phaseDurationMs - phaseRemainingMsAtPause);
+    pauseBtn.textContent = "Pause";
+  }
+
+  function resetTimer(){
+    clearInterval(tickIntervalId);
+    tickIntervalId = null;
+    window.speechSynthesis && window.speechSynthesis.cancel();
+
+    currentMode = "idle";
+    currentRound = 1;
+    currentExerciseIndex = 0;
+    completedThisRound = new Set();
+    overallCompletedCount = 0;
+    isPaused = false;
+
+    updateModeUI();
+    renderExerciseList();
+    updateOverallProgress();
+    updateDisplay(workoutDuration * 1000, workoutDuration * 1000);
+
+    startBtn.disabled = false;
+    startBtn.textContent = "Start";
+    pauseBtn.disabled = true;
+    pauseBtn.textContent = "Pause";
+    lockSettingsInputs(false);
+  }
+
+  /* =================================================================
+     DISPLAY / UI UPDATES
+  ==================================================================*/
+  function formatTime(ms){
+    const totalSeconds = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  function updateDisplay(remainingMs, totalMs){
+    timeDisplay.textContent = formatTime(remainingMs);
+    const fractionElapsed = totalMs > 0 ? 1 - (remainingMs / totalMs) : 0;
+    const clamped = Math.max(0, Math.min(1, fractionElapsed));
+    ringProgress.style.strokeDashoffset = String(RING_CIRCUMFERENCE * clamped);
+  }
+
+  function peekNextExerciseIndex(){
+    let idx = currentExerciseIndex + 1;
+    if(idx >= exercises.length) idx = 0;
+    return idx;
+  }
+
+  function updateModeUI(){
+    bodyEl.dataset.mode = currentMode;
+
+    if(currentMode === "idle"){
+      modeBadge.textContent = "READY";
+      exerciseNameEl.textContent = "Press Start";
+    }else if(currentMode === "ready"){
+      modeBadge.textContent = "GET READY";
+      exerciseNameEl.textContent = exercises[currentExerciseIndex] ? exercises[currentExerciseIndex].name : "";
+    }else if(currentMode === "workout"){
+      modeBadge.textContent = "WORKOUT";
+      exerciseNameEl.textContent = exercises[currentExerciseIndex] ? exercises[currentExerciseIndex].name : "";
+    }else if(currentMode === "rest"){
+      modeBadge.textContent = "REST";
+      const next = exercises[peekNextExerciseIndex()];
+      exerciseNameEl.textContent = next ? ("Next: " + next.name) : "Rest";
+    }else if(currentMode === "complete"){
+      modeBadge.textContent = "COMPLETE";
+      exerciseNameEl.textContent = "Workout Complete!";
+    }
+
+    roundInfoEl.textContent = "Round " + currentRound + " of " + totalRounds;
+  }
+
+  function updateOverallProgress(){
+    const totalIntervals = Math.max(1, totalRounds * exercises.length);
+    const pct = Math.round((overallCompletedCount / totalIntervals) * 100);
+    overallFill.style.width = Math.min(100, pct) + "%";
+    overallPercentEl.textContent = Math.min(100, pct) + "%";
+  }
+
+  function renderExerciseList(){
+    exerciseListEl.innerHTML = "";
+    const isActive = currentMode !== "idle" && currentMode !== "complete";
+
+    exercises.forEach((ex, idx) => {
+      const li = document.createElement("li");
+      li.className = "exercise-item";
+      if(completedThisRound.has(idx)) li.classList.add("done");
+      if(isActive && idx === currentExerciseIndex && currentMode !== "rest") li.classList.add("current");
+
+      const check = document.createElement("span");
+      check.className = "exercise-check";
+      check.textContent = "✓";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "exercise-name-text";
+      nameSpan.textContent = ex.name;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-exercise";
+      removeBtn.setAttribute("aria-label", "Remove " + ex.name);
+      removeBtn.textContent = "×";
+      removeBtn.disabled = isActive;
+      removeBtn.addEventListener("click", () => removeExercise(idx));
+
+      li.appendChild(check);
+      li.appendChild(nameSpan);
+      li.appendChild(removeBtn);
+      exerciseListEl.appendChild(li);
+    });
+  }
+
+  function lockSettingsInputs(locked){
+    document.querySelectorAll(".preset").forEach(btn => btn.disabled = locked);
+    restInput.disabled = locked;
+    roundsInput.disabled = locked;
+    newExerciseInput.disabled = locked;
+    addExerciseBtn.disabled = locked;
+  }
+
+  /* =================================================================
+     EXERCISE LIST EDITING
+  ==================================================================*/
+  function addExercise(){
+    const name = newExerciseInput.value.trim();
+    if(!name){
+      showToast("Enter an exercise name first");
+      return;
+    }
+    exercises.push({ name: name });
+    newExerciseInput.value = "";
+    renderExerciseList();
+    updateOverallProgress();
+    saveSettings();
+    showToast("Added " + name);
+  }
+
+  function removeExercise(idx){
+    if(exercises.length <= 1){
+      showToast("You need at least one exercise");
+      return;
+    }
+    const removedName = exercises[idx].name;
+    exercises.splice(idx, 1);
+    renderExerciseList();
+    updateOverallProgress();
+    saveSettings();
+    showToast("Removed " + removedName);
+  }
+
+  /* =================================================================
+     SETTINGS UI
+  ==================================================================*/
+  function syncPresetButtons(){
+    document.querySelectorAll(".preset").forEach(btn => {
+      btn.classList.toggle("active", Number(btn.dataset.secs) === workoutDuration);
+    });
+  }
+
+  presetGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest(".preset");
+    if(!btn || btn.disabled) return;
+    workoutDuration = Number(btn.dataset.secs);
+    syncPresetButtons();
+    saveSettings();
+    if(currentMode === "idle"){
+      updateDisplay(workoutDuration * 1000, workoutDuration * 1000);
+    }
+  });
+
+  restInput.addEventListener("change", () => {
+    let val = parseInt(restInput.value, 10);
+    if(isNaN(val) || val < 1) val = 1;
+    if(val > 600) val = 600;
+    restInput.value = val;
+    restDuration = val;
+    saveSettings();
+  });
+
+  roundsInput.addEventListener("change", () => {
+    let val = parseInt(roundsInput.value, 10);
+    if(isNaN(val) || val < 1) val = 1;
+    if(val > 50) val = 50;
+    roundsInput.value = val;
+    totalRounds = val;
+    updateOverallProgress();
+    if(currentMode === "idle"){
+      roundInfoEl.textContent = "Round " + currentRound + " of " + totalRounds;
+    }
+    saveSettings();
+  });
+
+  addExerciseBtn.addEventListener("click", addExercise);
+  newExerciseInput.addEventListener("keydown", (e) => {
+    if(e.key === "Enter") addExercise();
+  });
+
+  /* =================================================================
+     CONTROLS
+  ==================================================================*/
+  startBtn.addEventListener("click", () => {
+    initAudio();
+
+    if(currentMode === "idle" || currentMode === "complete"){
+      currentRound = 1;
+      currentExerciseIndex = 0;
+      completedThisRound = new Set();
+      overallCompletedCount = 0;
+
+      startBtn.disabled = true;
+      startBtn.textContent = "Start";
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = "Pause";
+      lockSettingsInputs(true);
+
+      updateOverallProgress();
+      startPhase("ready", 3);
+    }
+  });
+
+  pauseBtn.addEventListener("click", () => {
+    if(isPaused) resumeTimer(); else pauseTimer();
+  });
+
+  resetBtn.addEventListener("click", () => {
+    resetTimer();
+  });
+
+  /* =================================================================
+     FULL-SCREEN MODE
+  ==================================================================*/
+  fullscreenBtn.addEventListener("click", () => {
+    if(!document.fullscreenElement){
+      document.documentElement.requestFullscreen().catch(() => {
+        showToast("Full screen isn't available");
+      });
+    }else{
+      document.exitFullscreen();
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    fullscreenBtn.textContent = document.fullscreenElement ? "⤡" : "⛶";
+  });
+
+  /* =================================================================
+     INIT
+  ==================================================================*/
+  function init(){
+    loadSettings();
+
+    restInput.value = restDuration;
+    roundsInput.value = totalRounds;
+    syncPresetButtons();
+
+    renderExerciseList();
+    updateModeUI();
+    updateOverallProgress();
+    updateDisplay(workoutDuration * 1000, workoutDuration * 1000);
+  }
+
+  init();
+
+  /* =================================================================
+     PWA — register the service worker for offline support
+  ==================================================================*/
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
