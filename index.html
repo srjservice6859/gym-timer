@@ -305,10 +305,21 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
+  .exercise-item:active{ transform: scale(0.99); }
+  /* Selected but not started yet: a quiet outline so it's clear what
+     will run next when the person taps Start. */
+  .exercise-item.selected{
+    border-color: var(--muted);
+  }
+  /* Currently in progress (workout phase running, not finished yet):
+     dark red fill to signal "in progress / not done". */
   .exercise-item.current{
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--workout) 22%, var(--surface-2));
+    border-color: var(--workout);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--workout) 45%, transparent);
   }
   .exercise-check{
     width: 22px; height:22px;
@@ -320,14 +331,23 @@
     flex-shrink:0;
     transition: all 0.2s ease;
   }
+  .exercise-item.current .exercise-check{
+    border-color: var(--workout);
+  }
+  /* Finished: light green fill to signal "done". */
+  .exercise-item.done{
+    background: color-mix(in srgb, var(--complete) 20%, var(--surface-2));
+    border-color: var(--complete);
+  }
   .exercise-item.done .exercise-check{
     background: var(--complete);
     border-color: var(--complete);
     color: #0B0D0F;
   }
   .exercise-item.done .exercise-name-text{
-    color: var(--muted);
+    color: var(--text);
     text-decoration: line-through;
+    opacity: 0.75;
   }
   .exercise-name-text{
     flex:1;
@@ -842,6 +862,7 @@
       li.className = "exercise-item";
       if(completedThisRound.has(idx)) li.classList.add("done");
       if(isActive && idx === currentExerciseIndex && currentMode !== "rest") li.classList.add("current");
+      if(!isActive && idx === currentExerciseIndex) li.classList.add("selected");
 
       const check = document.createElement("span");
       check.className = "exercise-check";
@@ -856,13 +877,44 @@
       removeBtn.setAttribute("aria-label", "Remove " + ex.name);
       removeBtn.textContent = "×";
       removeBtn.disabled = isActive;
-      removeBtn.addEventListener("click", () => removeExercise(idx));
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeExercise(idx);
+      });
+
+      li.setAttribute("role", "button");
+      li.setAttribute("aria-label", "Select " + ex.name);
+      li.addEventListener("click", () => selectExercise(idx));
 
       li.appendChild(check);
       li.appendChild(nameSpan);
       li.appendChild(removeBtn);
       exerciseListEl.appendChild(li);
     });
+  }
+
+  // Tapping an exercise in the list either (a) sets it as the exercise
+  // that Start will begin with, while the timer is idle, or (b) jumps
+  // straight to it — skipping whatever phase is currently running —
+  // if a workout is already in progress. This lets the person pick
+  // their own order on the fly instead of always going top to bottom.
+  function selectExercise(idx){
+    if(idx === currentExerciseIndex && currentMode !== "idle" && currentMode !== "complete") return;
+
+    if(currentMode === "idle" || currentMode === "complete"){
+      currentMode = "idle";
+      currentExerciseIndex = idx;
+      renderExerciseList();
+      updateModeUI();
+      updateDisplay(workoutDuration * 1000, workoutDuration * 1000);
+      return;
+    }
+
+    // A workout is actively running: jump straight into this exercise.
+    initAudio();
+    currentExerciseIndex = idx;
+    startPhase("workout", workoutDuration);
+    speak("Go!");
   }
 
   function lockSettingsInputs(locked){
